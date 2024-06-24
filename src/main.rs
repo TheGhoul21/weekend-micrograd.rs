@@ -1,3 +1,5 @@
+use rand::Rng;
+
 pub mod param {
     use std::{
         collections::HashSet,
@@ -12,12 +14,13 @@ pub mod param {
         Mul,
         Init,
         Relu,
+        Exp,
         Pow,
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Param {
-        id: u64
+        id: u64,
     }
 
     impl Param {
@@ -35,6 +38,14 @@ pub mod param {
 
         pub fn relu(&self) -> Param {
             ParamManager::relu(self)
+        }
+
+        pub fn exp(&self) -> Param {
+            ParamManager::exp(self)
+        }
+
+        pub fn set_value(&self, value: f32) {
+            ParamManager::set_value(self, value);
         }
 
         pub fn powf(&self, power: f32) -> Param {
@@ -77,11 +88,6 @@ pub mod param {
 
             let grad = self.grad();
 
-            // debug info:
-            println!("backward_add.id1: {:?}", id1.value());
-            println!("backward_add.id2: {:?}", id2.value());
-            println!("backward_add.grad: {:?}", grad);
-
             id1.acc_grad(grad);
             id2.acc_grad(grad);
         }
@@ -93,17 +99,6 @@ pub mod param {
             let id2 = prev[1];
 
             let grad = self.grad();
-
-            // debug prints:
-
-            println!("id1: {:?}", id1.value());
-            println!("id2: {:?}", id2.value());
-            println!("grad: {:?}", grad);
-
-            println!(
-                "acc_grad: {:?}",
-                grad * id2.value() * id1.value().powf(id2.value() - 1.0)
-            );
 
             id1.acc_grad(grad * id2.value() * id1.value().powf(id2.value() - 1.0));
         }
@@ -124,18 +119,23 @@ pub mod param {
 
             let id1 = prev[0];
 
-            println!("_backward_relu.id1: {:?}", id1.value());
-
             if id1.value() > 0.0 {
-                println!("Gradient flowing back: {:?}", self.grad());
                 id1.acc_grad(self.grad());
             }
         }
 
+        pub fn _backward_exp(&self) {
+            let prev = self.prev();
+
+            let id1 = prev[0];
+
+            let grad = self.grad();
+
+            id1.acc_grad(grad * self.value());
+        }
+
         pub fn _backward(&self) {
             let op = self.op();
-
-            println!("Op: {:?}", op);
 
             match op {
                 Op::Add => {
@@ -150,8 +150,11 @@ pub mod param {
                 Op::Relu => {
                     self._backward_relu();
                 }
+                Op::Exp => {
+                    self._backward_exp();
+                }
                 _ => {
-                    println!("Not implemented");
+                    // println!("Not implemented");
                 }
             }
         }
@@ -176,15 +179,11 @@ pub mod param {
                 topo: &mut Vec<u64>,
                 visited: &mut HashSet<u64>,
             ) -> Vec<u64> {
-
                 if !visited.contains(&node.id) {
                     visited.insert(node.id);
                     let prev = node.prev();
                     for prev_node in prev.iter() {
-                        println!("Topo before: {:?}", topo);
                         build_topo(prev_node, topo, visited);
-                        println!("Topo after: {:?}", topo);
-                        
                     }
                     topo.push(node.id);
                 }
@@ -194,20 +193,13 @@ pub mod param {
             self.set_grad(1.0);
             let mut topo = build_topo(self, &mut topo, &mut visited);
 
-            println!("Topo: {:?}", topo);
-            println!("Topo len: {:?}", topo.len());
-
-            println!("Visited: {:?}", visited);
-
             let drained = topo.drain(0..topo.len()).collect::<Vec<u64>>();
             let mut reversed = drained;
             reversed.reverse();
 
-            println!("Reversed: {:?}", reversed);
             let mut node = Param { id: self.id };
             for id in reversed.drain(..) {
                 node.id = id;
-                println!("Before iteration: {:?} {:?}", node, node.grad());
                 node._backward();
             }
         }
@@ -224,7 +216,7 @@ pub mod param {
 
     impl Drop for ParamContainer {
         fn drop(&mut self) {
-            println!("Dropping {:?}", self.id);
+            // println!("Dropping {:?}", self.id);
         }
     }
 
@@ -251,6 +243,12 @@ pub mod param {
 
         fn next_id(&self) -> u64 {
             self.params.len() as u64
+        }
+
+        fn set_value(id: &Param, value: f32) {
+            let mut pm = PARAM_MANAGER.lock().unwrap();
+            let param = pm.get_param_mut(id).unwrap();
+            param.value = value;
         }
 
         pub fn get_next_id() -> u64 {
@@ -325,6 +323,14 @@ pub mod param {
             let value = id.value().max(0.0);
             let prev = vec![*id];
             let op = Op::Relu;
+
+            ParamManager::add_param(value, prev, op)
+        }
+
+        pub fn exp(id: &Param) -> Param {
+            let value = id.value().exp();
+            let prev = vec![*id];
+            let op = Op::Exp;
 
             ParamManager::add_param(value, prev, op)
         }
@@ -484,7 +490,7 @@ pub mod param {
     }
 }
 
-
+use param::Param;
 
 use crate::param::PM;
 fn main() {
@@ -556,4 +562,124 @@ fn main() {
     println!("a.grad = {:?}", a.grad());
     println!("b.grad = {:?}", b.grad());
 
+    {
+        let a = PM::from_value(3.0);
+
+        let b = PM::from_value(2.0);
+
+        let mut c = a + b.exp();
+
+        c.backward();
+        // print debug
+
+        println!("a.value = {:?}", a.value());
+        println!("b.value = {:?}", b.value());
+        println!("c.value = {:?}", c.value());
+        println!("=====================================");
+        println!("c.grad = {:?}", c.grad());
+        println!("b.grad = {:?}", b.grad());
+        println!("a.grad = {:?}", a.grad());
+
+        assert_eq!(c.value(), 3.0 + 2.0f32.exp());
+        assert_eq!(a.grad(), 1.0);
+        assert_eq!(b.grad(), 2.0f32.exp());
+
+        let input_size = 20;
+        // generate a random input
+        let mut rng = rand::thread_rng();
+        let mut input = vec![];
+        for _ in 0..input_size {
+            input.push(PM::from_value(rng.gen_range(-1.0..1.0)));
+        }
+
+        let learning_rate = 0.01;
+
+        let number_of_epochs = 50;
+        let mut linear = LinearLayer::new(input_size, 2);
+        let mut linear2 = LinearLayer::new(2, input_size);
+
+        for i in 0..number_of_epochs {
+            let latent = linear.forward(&input);
+            let output = linear2.forward(&latent);
+            // calculate the reconstruction loss
+            let target = &input;
+            let mut loss = PM::from_value(0.0);
+
+            for i in 0..input_size {
+                loss += (output[i] - target[i]).powf(2.0);
+            }
+            loss.backward();
+
+            linear.optimize(learning_rate);
+            linear2.optimize(learning_rate);
+
+            linear.zero_grad();
+            linear2.zero_grad();
+            println!("{}/{} Current loss: {:?}", i+1, number_of_epochs, loss.value());
+        }
+        // print the latent representation
+    }
+}
+
+struct LinearLayer {
+    input_size: usize,
+    output_size: usize,
+    params: Vec<param::Param>,
+    biases: Vec<param::Param>,
+}
+
+impl LinearLayer {
+    fn new(input_size: usize, output_size: usize) -> LinearLayer {
+        let mut rng = rand::thread_rng();
+        let mut params = vec![];
+        let mut biases = vec![];
+        for _ in 0..output_size {
+            for _ in 0..input_size {
+                let param = PM::from_value(rng.gen_range(-1.0..1.0));
+
+                params.push(param);
+            }
+            // params.push(param::PM::add_param(0.0, p, param::Op::Init));
+            biases.push(PM::from_value(0.2));
+        }
+        LinearLayer {
+            input_size,
+            output_size,
+            params,
+            biases,
+        }
+    }
+
+    fn forward(&self, input: &Vec<param::Param>) -> Vec<Param> {
+        let mut output = vec![];
+
+        for i in 0..self.output_size {
+            let mut sum = param::PM::from_value(0.0);
+            for j in 0..self.input_size {
+                sum += self.params[i * self.input_size + j] * input[j];
+            }
+            output.push(sum);
+        }
+
+        output
+    }
+
+    fn optimize(&mut self, learning_rate: f32) {
+        for i in 0..self.output_size {
+            for j in 0..self.input_size {
+                self.params[i * self.input_size + j].set_value(
+                    self.params[i * self.input_size + j].value()
+                        - learning_rate * self.params[i * self.input_size + j].grad(),
+                );
+            }
+        }
+    }
+
+    fn zero_grad(&mut self) {
+        for i in 0..self.output_size {
+            for j in 0..self.input_size {
+                self.params[i * self.input_size + j].set_grad(0.0);
+            }
+        }
+    }
 }
