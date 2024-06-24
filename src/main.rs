@@ -17,11 +17,11 @@ pub mod param {
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Param {
-        id: i32,
+        id: u64
     }
 
     impl Param {
-        // fn id(&self) -> i32 {
+        // fn id(&self) -> u64 {
         //     self.id
         // }
 
@@ -168,14 +168,14 @@ pub mod param {
         }
 
         pub fn backward(&mut self) {
-            let mut topo: Vec<i32> = vec![];
-            let mut visited: HashSet<i32> = HashSet::new();
+            let mut topo: Vec<u64> = vec![];
+            let mut visited: HashSet<u64> = HashSet::new();
 
             fn build_topo(
                 node: &Param,
-                topo: &mut Vec<i32>,
-                visited: &mut HashSet<i32>,
-            ) -> Vec<i32> {
+                topo: &mut Vec<u64>,
+                visited: &mut HashSet<u64>,
+            ) -> Vec<u64> {
 
                 if !visited.contains(&node.id) {
                     visited.insert(node.id);
@@ -199,7 +199,7 @@ pub mod param {
 
             println!("Visited: {:?}", visited);
 
-            let drained = topo.drain(0..topo.len()).collect::<Vec<i32>>();
+            let drained = topo.drain(0..topo.len()).collect::<Vec<u64>>();
             let mut reversed = drained;
             reversed.reverse();
 
@@ -220,6 +220,12 @@ pub mod param {
         prev: Vec<Param>,
         op: Op,
         pub grad: f32,
+    }
+
+    impl Drop for ParamContainer {
+        fn drop(&mut self) {
+            println!("Dropping {:?}", self.id);
+        }
     }
 
     impl ParamContainer {
@@ -243,8 +249,13 @@ pub mod param {
             ParamManager { params: Vec::new() }
         }
 
-        fn next_id(&self) -> i32 {
-            self.params.len() as i32
+        fn next_id(&self) -> u64 {
+            self.params.len() as u64
+        }
+
+        pub fn get_next_id() -> u64 {
+            let pm = PARAM_MANAGER.lock().unwrap();
+            pm.next_id()
         }
 
         pub fn dump_all_params(&self) {
