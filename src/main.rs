@@ -168,14 +168,14 @@ pub mod param {
         }
 
         pub fn backward(&mut self) {
-            let mut topo: Vec<Param> = vec![];
+            let mut topo: Vec<i32> = vec![];
             let mut visited: HashSet<i32> = HashSet::new();
 
             fn build_topo(
                 node: &Param,
-                topo: &mut Vec<Param>,
+                topo: &mut Vec<i32>,
                 visited: &mut HashSet<i32>,
-            ) -> Vec<Param> {
+            ) -> Vec<i32> {
 
                 if !visited.contains(&node.id) {
                     visited.insert(node.id);
@@ -186,7 +186,7 @@ pub mod param {
                         println!("Topo after: {:?}", topo);
                         
                     }
-                    topo.push(node.clone());
+                    topo.push(node.id);
                 }
 
                 topo.to_vec()
@@ -199,13 +199,14 @@ pub mod param {
 
             println!("Visited: {:?}", visited);
 
-            let drained = topo.drain(0..topo.len()).collect::<Vec<Param>>();
+            let drained = topo.drain(0..topo.len()).collect::<Vec<i32>>();
             let mut reversed = drained;
             reversed.reverse();
 
             println!("Reversed: {:?}", reversed);
-
-            for node in reversed.drain(..) {
+            let mut node = Param { id: self.id };
+            for id in reversed.drain(..) {
+                node.id = id;
                 println!("Before iteration: {:?} {:?}", node, node.grad());
                 node._backward();
             }
@@ -543,5 +544,5 @@ fn main() {
     println!("c.grad = {:?}", c.grad());
     println!("a.grad = {:?}", a.grad());
     println!("b.grad = {:?}", b.grad());
-    // assert_eq!(c.grad(), 250.0);
+
 }
